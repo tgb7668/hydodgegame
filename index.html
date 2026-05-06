@@ -4,191 +4,135 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>융르지마세요</title>
 <style>
-body { margin:0; padding:0; width:100vw; height:100vh; overflow:hidden; background:#111;
-background-image:url('background.png'); background-size:100% 100%; background-repeat:no-repeat; background-position:center;
-font-family:'Pretendard', sans-serif; color:white; display:flex; flex-direction:column; align-items:center; justify-content:center; }.game-wrapper { position:relative; width:1000px; height:700px; max-width:100vw; max-height:80vh; } canvas { display:block; background:transparent; }
+body {
+ margin:0; padding:0; background:#111;
+ font-family:'Pretendard', sans-serif;
+ display:flex; flex-direction:column; align-items:center; justify-content:center;
+ height:100vh; overflow:hidden;
+}.game-wrapper { width:100vw; max-width:1000px; aspect-ratio: 1000 / 700; position:relative; }
 
-/* UI */ #scoreBoard { position:absolute; top:25px; left:25px; font-size:32px; font-weight:900; z-index:5; display:none; } #lobby { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; } .start-btn { padding:20px 50px; font-size:24px; } #resultBoard { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.9); padding:30px; border-radius:20px; }
+canvas { width:100%; height:100%; display:block; background:transparent; }
 
-/* 🔥 조이스틱 */ .joystick-area { width:100%; height:120px; display:flex; justify-content:center; align-items:center; margin-top:10px; } .joystick { width:110px; height:110px; background:rgba(255,255,255,0.1); border-radius:50%; position:relative; touch-action:none; } .stick { width:44px; height:44px; background:#ffcf00; border-radius:50%; position:absolute; top:33px; left:33px; } </style>
+#scoreBoard { position:absolute; top:10px; left:10px; font-size:20px; font-weight:bold; display:none; }
+
+#lobby { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; flex-direction:column; align-items:center; justify-content:center; }
+
+.start-btn { padding:15px 40px; font-size:20px; }
+
+#resultBoard { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.9); padding:20px; border-radius:15px; }
+
+/* 🔥 조이스틱 중앙 고정 */ .joystick-area { width:100%; height:140px; display:flex; justify-content:center; align-items:center; }
+
+.joystick { width:120px; height:120px; border-radius:50%; border:2px solid rgba(255,255,255,0.3); position:relative; touch-action:none; }
+
+.stick { width:50px; height:50px; background:#ffcf00; border-radius:50%; position:absolute; top:35px; left:35px; } </style>
 
 </head>
 <body><div class="game-wrapper">
-<canvas id="gameCanvas" width="1000" height="700"></canvas>
-<div id="scoreBoard">SCORE: 0</div><div id="lobby"><h1>융르지마세요</h1><button class="start-btn" onclick="startGame()">START</button></div><div id="resultBoard"><h2>GAME OVER</h2><p id="finalScoreTxt"></p><button onclick="location.reload()">RETRY</button></div>
-</div><!-- 조이스틱 --><div class="joystick-area">
-  <div class="joystick" id="joystick">
-    <div class="stick" id="stick"></div>
-  </div>
+ <canvas id="gameCanvas" width="1000" height="700"></canvas>
+ <div id="scoreBoard">SCORE: 0</div> <div id="lobby">
+  <h1>융르지마세요</h1>
+  <button class="start-btn" onclick="startGame()">START</button>
+ </div> <div id="resultBoard">
+  <h2>GAME OVER</h2>
+  <p id="finalScoreTxt"></p>
+  <button onclick="location.reload()">RETRY</button>
+ </div>
+</div><div class="joystick-area">
+ <div class="joystick" id="joystick">
+  <div class="stick" id="stick"></div>
+ </div>
 </div><script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const joystick = document.getElementById('joystick');
+const stick = document.getElementById('stick');
 const scoreBoard = document.getElementById('scoreBoard');
 const lobby = document.getElementById('lobby');
 const resultBoard = document.getElementById('resultBoard');
 
-const joystick = document.getElementById('joystick');
-const stick = document.getElementById('stick');
+const player = { x:500, y:350, radius:28, speed:6 };
+let enemies=[], score=0, gameOver=false, isStarted=false;
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyM5kd7tzvllmBbZUtIcflTzLDWirV2a5QoyzKBY4q-G0vfoSkIgp8jw5xlQdX57OfEjA/exec";
-
-const imgs = { player:new Image(), normal:new Image(), homing:new Image(), giant:new Image(), teleport:new Image() };
-imgs.player.src='player.png';
-imgs.normal.src='enemy_normal.png';
-imgs.homing.src='enemy_homing.png';
-imgs.giant.src='enemy_giant.png';
-imgs.teleport.src='enemy_teleport.png';
-
-const status = { player:false, normal:false, homing:false, giant:false, teleport:false };
-Object.keys(imgs).forEach(k => imgs[k].onload = () => status[k] = true);
-
-const player = { x:500, y:350, radius:28, speed:6.2, invincible:false };
-let enemies=[], score=0, gameOver=false, isStarted=false, keys={};
-const MAX_ENEMIES=30;
-
-// 🔥 조이스틱 상태
 let joyDX=0, joyDY=0;
-
-// 랭킹
-async function fetchRanking(){
- try{
-  const res=await fetch(GAS_URL);
-  const data=await res.json();
-  document.getElementById('lobbyRankingList').innerHTML = data.slice(0,10).map((it,i)=>`<li><span>${i+1}. ${it.name}</span><span>${it.score}</span></li>`).join('');
- }catch(e){}
-}
-fetchRanking();
-
-// 키보드
-window.addEventListener('keydown', e => keys[e.code]=true);
-window.addEventListener('keyup', e => keys[e.code]=false);
 
 function startGame(){
  isStarted=true;
  lobby.style.display='none';
  scoreBoard.style.display='block';
- player.invincible=true;
- setTimeout(()=>player.invincible=false,1500);
+ player.x = 500; // 🔥 중앙 시작
+ player.y = 350;
  animate();
 }
 
-// 🔥 조이스틱 입력
+// 🔥 조이스틱
 joystick.addEventListener('touchmove', e=>{
  e.preventDefault();
  const rect=joystick.getBoundingClientRect();
  const t=e.touches[0];
- let x=t.clientX-rect.left-55;
- let y=t.clientY-rect.top-55;
+ let x=t.clientX-rect.left-60;
+ let y=t.clientY-rect.top-60;
  const dist=Math.hypot(x,y);
- const max=45;
+ const max=50;
  if(dist>max){ x=x/dist*max; y=y/dist*max; }
- stick.style.left=(x+55-22)+'px';
- stick.style.top=(y+55-22)+'px';
+ stick.style.left=(x+60-25)+'px';
+ stick.style.top=(y+60-25)+'px';
  joyDX=x/max; joyDY=y/max;
 },{passive:false});
 
 joystick.addEventListener('touchend', ()=>{
  joyDX=0; joyDY=0;
- stick.style.left='33px'; stick.style.top='33px';
+ stick.style.left='35px'; stick.style.top='35px';
 });
 
 function spawnEnemy(){
- if(enemies.length>=MAX_ENEMIES) return;
- const side=Math.floor(Math.random()*4);
- let x,y;
- if(side===0){x=Math.random()*1000;y=-100;}
- else if(side===1){x=Math.random()*1000;y=800;}
- else if(side===2){x=-100;y=Math.random()*700;}
- else{x=1100;y=Math.random()*700;}
-
- const angle=Math.atan2(player.y-y, player.x-x);
- const baseSpeed=1.3+(score/300);
- let type='normal', radius=24, speed=baseSpeed+Math.random()*1.5;
-
- const rand=Math.random();
- if(score>=1500&&rand<0.12){ type='teleport'; }
- else if(score>=1000&&rand<0.18){ type='giant'; radius=55; speed*=0.55; }
- else if(score>=500&&rand<0.22){ type='homing'; }
-
- enemies.push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,radius,type,speed,isHomingActive:true});
+ const x = Math.random()*1000;
+ const y = Math.random()*700;
+ const angle = Math.atan2(player.y-y, player.x-x);
+ const speed = 2 + Math.random()*2;
+ enemies.push({ x,y, vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, radius:20 });
 }
 
 function update(){
  if(gameOver||!isStarted) return;
 
- // 🔥 키보드 + 조이스틱 병행 (정밀 속도 보정)
- let dx = 0;
- let dy = 0;
+ let dx=joyDX, dy=joyDY;
+ const len=Math.hypot(dx,dy);
+ if(len>0){ dx/=len; dy/=len; }
 
- // 키보드 입력
- if(keys['ArrowUp']) dy -= 1;
- if(keys['ArrowDown']) dy += 1;
- if(keys['ArrowLeft']) dx -= 1;
- if(keys['ArrowRight']) dx += 1;
-
- // 조이스틱 입력 추가
- dx += joyDX;
- dy += joyDY;
-
- // 🔥 대각선 속도 보정 (정규화)
- const length = Math.hypot(dx, dy);
- if(length > 0){
-   dx /= length;
-   dy /= length;
- }
-
- // 🔥 최종 이동 (속도 3.5 적용)
  player.x += dx * player.speed * 3.5;
  player.y += dy * player.speed * 3.5;
 
- // 🔥 화면 밖 이동 제한 (외곽 기준 - 정확)
-player.x = Math.max(player.radius, Math.min(1000 - player.radius, player.x));
-player.y = Math.max(player.radius, Math.min(700 - player.radius, player.y));
+ player.x = Math.max(player.radius, Math.min(1000-player.radius, player.x));
+ player.y = Math.max(player.radius, Math.min(700-player.radius, player.y));
 
- for(let i=enemies.length-1;i>=0;i--){
-  const e=enemies[i];
-  const dist=Math.hypot(player.x-e.x, player.y-e.y);
-  if(e.type==='homing' && e.isHomingActive){
-    if(dist>250){
-      const a=Math.atan2(player.y-e.y, player.x-e.x);
-      e.vx=Math.cos(a)*e.speed;
-      e.vy=Math.sin(a)*e.speed;
-    } else e.isHomingActive=false;
-  }
+ enemies.forEach(e=>{
   e.x+=e.vx; e.y+=e.vy;
-  if(!player.invincible && dist < (player.radius + e.radius - 6)){
-    gameOver=true;
-    document.getElementById('finalScoreTxt').innerText = `SCORE: ${Math.floor(score)}`;
-    resultBoard.style.display="block";
-    scoreBoard.style.display="none";
-    const name=prompt("랭킹 이름","익명");
-    if(name) fetch(`${GAS_URL}?name=${encodeURIComponent(name)}&score=${Math.floor(score)}`);
-    return;
-  }
- }
+  const d=Math.hypot(player.x-e.x, player.y-e.y);
+  if(d < player.radius + e.radius){ gameOver=true; resultBoard.style.display='block'; }
+ });
 
- score+=0.05;
- scoreBoard.innerText=`SCORE: ${Math.floor(score)}`;
- if(Math.random()<0.04+(score/10000)) spawnEnemy();
+ score+=0.1;
+ scoreBoard.innerText='SCORE: '+Math.floor(score);
+ if(Math.random()<0.03) spawnEnemy();
+}
+
+function draw(){
+ ctx.clearRect(0,0,1000,700);
+
+ ctx.beginPath(); ctx.arc(player.x,player.y,player.radius,0,Math.PI*2);
+ ctx.fillStyle='#ffcf00'; ctx.fill();
+
+ enemies.forEach(e=>{
+  ctx.beginPath(); ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);
+  ctx.fillStyle='#ff4d4d'; ctx.fill();
+ });
 }
 
 function animate(){
  if(gameOver) return;
- ctx.clearRect(0,0,1000,700);
-
- enemies.forEach(e=>{
-  ctx.beginPath();
-  ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);
-  ctx.fillStyle='#ff4d4d';
-  ctx.fill();
- });
-
- ctx.beginPath();
- ctx.arc(player.x,player.y,player.radius,0,Math.PI*2);
- ctx.fillStyle='#ffcf00';
- ctx.fill();
-
  update();
+ draw();
  requestAnimationFrame(animate);
 }
 </script></body>
